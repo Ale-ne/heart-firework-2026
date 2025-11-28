@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>高级感心跳爱心 | 烟花炸裂特效（带音效）</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: "Microsoft Yahei", sans-serif;
+            /* 高级暗调渐变背景 */
+            background: linear-gradient(135deg, #0a0a12, #120f24, #0f0a1e);
+        }
+        canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+        .tip {
+            position: absolute;
+            bottom: 30px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            z-index: 1;
+            transition: opacity 0.5s;
+            text-shadow: 0 0 10px rgba(180, 100, 160, 0.5);
+        }
+        .tip:hover {
+            opacity: 1;
+            color: rgba(255, 255, 255, 0.9);
+        }
+        /* 隐藏音频控件但保留音效 */
+        audio {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="heartCanvas"></canvas>
+    <div class="tip">💫 鼠标移动互动 | 心跳触发全屏烟花+音效 💫</div>
+    
+    <!-- 音效资源（使用免费公共CDN资源，无需本地下载） -->
+    <audio id="heartbeatAudio" loop>
+        <source src="https://cdn.pixabay.com/download/audio/2022/05/26/audio_1f20809982.mp3?filename=heartbeat-120881.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="fireworkAudio">
+        <source src="https://cdn.pixabay.com/download/audio/2022/03/08/audio_299f59929f.mp3?filename=firework-83202.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const canvas = document.getElementById('heartCanvas');
+        const ctx = canvas.getContext('2d');
+        let canvasWidth = window.innerWidth;
+        let canvasHeight = window.innerHeight;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+
+        // 音效初始化
+        const heartbeatAudio = document.getElementById('heartbeatAudio');
+        const fireworkAudio = document.getElementById('fireworkAudio');
+        // 设置音效音量（避免过响）
+        heartbeatAudio.volume = 0.5;
+        fireworkAudio.volume = 0.7;
+        // 自动播放心跳声（需用户交互后触发，符合浏览器策略）
+        document.addEventListener('click', () => {
+            if (heartbeatAudio.paused) {
+                heartbeatAudio.play().catch(err => console.log("音效播放需用户交互：", err));
+            }
+        });
+
+        // 适配窗口
+        window.addEventListener('resize', () => {
+            canvasWidth = window.innerWidth;
+            canvasHeight = window.innerHeight;
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            // 重置星空粒子
+            starParticles = createStarParticles();
+        });
+
+        // 全局配置
+        const config = {
+            heart: { baseScale: 1, pulseSpeed: 0.04, maxScale: 1.15 },
+            colors: {
+                // 高级莫兰迪玫瑰色系（主色）
+                primary: '#9f4e78',
+                secondary: '#7a3b69',
+                tertiary: '#b86a8f',
+                // 烟花辅助色
+                firework: ['#d88a9e', '#a25a7a', '#e2a4b4', '#6b3452', '#c0708f'],
+                // 星空粒子色
+                star: '#e8c4cd'
+            },
+            particles: { maxCount: 1200 }, // 提高粒子上限
+            fireworks: { maxCount: 50 }    // 提高烟花上限
+        };
+
+        // 1. 星空粒子（打底，避免背景空旷）
+        let starParticles = [];
+        class StarParticle {
+            constructor() {
+                this.x = Math.random() * canvasWidth;
+                this.y = Math.random() * canvasHeight;
+                this.size = Math.random() * 1.2 + 0.2;
+                this.alpha = Math.random() * 0.7 + 0.1;
+                this.speed = Math.random() * 0.2 + 0.05;
+                this.angle = Math.random() * Math.PI * 2;
+            }
+            update() {
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+                // 边界回弹
+                if (this.x < 0) this.x = canvasWidth;
+                if (this.x > canvasWidth) this.x = 0;
+                if (this.y < 0) this.y = canvasHeight;
+                if (this.y > canvasHeight) this.y = 0;
+                // 呼吸效果
+                this.alpha += Math.sin(Date.now() / 2000) * 0.005;
+                this.alpha = Math.max(0.1, Math.min(0.8, this.alpha));
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${parseInt(config.colors.star.slice(1,3),16)}, ${parseInt(config.colors.star.slice(3,5),16)}, ${parseInt(config.colors.star.slice(5,7),16)}, ${this.alpha})`;
+                ctx.fill();
+            }
+        }
+        // 创建星空粒子
+        function createStarParticles() {
+            const stars = [];
+            for (let i = 0; i < 300; i++) stars.push(new StarParticle()); // 增加星空粒子数量
+            return stars;
+        }
+        starParticles = createStarParticles();
+
+        // 2. 烟花粒子（核心震撼效果 - 提高密度）
+        let fireworkParticles = [];
+        class FireworkParticle {
+            constructor(x, y, type = 'normal') {
+                this.x = x;
+                this.y = y;
+                this.type = type; // normal:普通粒子, trail:拖尾, core:烟花核心
+                // 核心粒子更大更亮
+                this.size = type === 'core' ? Math.random() * 6 + 4 : (type === 'trail' ? Math.random() * 2 + 0.5 : Math.random() * 3 + 1);
+                // 随机选择高级配色
+                this.color = config.colors.firework[Math.floor(Math.random() * config.colors.firework.length)];
+                // 速度和角度（炸裂效果）
+                this.angle = Math.random() * Math.PI * 2;
+                this.speed = type === 'core' ? Math.random() * 8 + 5 : (type === 'trail' ? Math.random() * 3 + 1 : Math.random() * 6 + 2);
+                // 重力和衰减
+                this.gravity = 0.05;
+                this.alpha = type === 'core' ? 1 : (type === 'trail' ? 0.8 : 0.9);
+                this.decay = type === 'core' ? 0.015 : (type === 'trail' ? 0.02 : 0.01);
+                this.vx = Math.cos(this.angle) * this.speed;
+                this.vy = Math.sin(this.angle) * this.speed;
+            }
+            update() {
+                // 加入重力
+                this.vy += this.gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+                // 速度衰减
+                this.vx *= 0.98;
+                this.vy *= 0.98;
+                // 透明度衰减
+                this.alpha -= this.decay;
+                // 尺寸缩小
+                this.size *= 0.98;
+            }
+            draw() {
+                if (this.alpha <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                // 核心粒子加光晕
+                if (this.type === 'core') {
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = this.color;
+                }
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // 生成烟花（大幅提高粒子密度）
+        function createFirework(x, y) {
+            // 限制烟花数量，避免性能卡顿
+            if (fireworkParticles.length > config.fireworks.maxCount * 15) return;
+            
+            // 播放烟花音效（每次心跳触发一次）
+            fireworkAudio.currentTime = 0; // 重置播放位置
+            fireworkAudio.play().catch(err => console.log("烟花音效播放失败：", err));
+            
+            // 1. 烟花核心（数量翻倍）
+            for (let i = 0; i < 30; i++) { // 原15 → 30
+                fireworkParticles.push(new FireworkParticle(x, y, 'core'));
+            }
+            // 2. 普通炸裂粒子（大幅增加）
+            for (let i = 0; i < 120; i++) { // 原80 → 120
+                fireworkParticles.push(new FireworkParticle(x, y, 'normal'));
+            }
+            // 3. 拖尾粒子（数量翻倍）
+            for (let i = 0; i < 80; i++) { // 原40 → 80
+                fireworkParticles.push(new FireworkParticle(x, y, 'trail'));
+            }
+            // 随机在画布其他位置生成次级烟花（扩大震撼范围，数量增加）
+            const secondaryCount = Math.floor(Math.random() * 5 + 3); // 原3+2 → 5+3
+            for (let i = 0; i < secondaryCount; i++) {
+                const sx = Math.random() * canvasWidth;
+                const sy = Math.random() * canvasHeight;
+                for (let j = 0; j < 50; j++) { // 原30 → 50
+                    fireworkParticles.push(new FireworkParticle(sx, sy, j % 3 === 0 ? 'trail' : 'normal'));
+                }
+            }
+        }
+
+        // 3. 爱心粒子（点缀，数量增加）
+        let heartParticles = [];
+        class HeartParticle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 2 + 1;
+                this.color = config.colors.tertiary;
+                this.vx = Math.random() * 4 - 2;
+                this.vy = Math.random() * 4 - 2;
+                this.alpha = 1;
+                this.decay = Math.random() * 0.01 + 0.005;
+                // 旋转效果
+                this.rotation = Math.random() * Math.PI * 2;
+                this.rotateSpeed = Math.random() * 0.1 - 0.05;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.alpha -= this.decay;
+                this.rotation += this.rotateSpeed;
+                // 缓动效果
+                this.vx *= 0.97;
+                this.vy *= 0.97;
+            }
+            draw() {
+                if (this.alpha <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                // 小爱心形状
+                ctx.beginPath();
+                for (let t = 0; t < Math.PI * 2; t += 0.1) {
+                    const x = 4 * Math.pow(Math.sin(t), 3);
+                    const y = -(3 * Math.cos(t) - Math.cos(3*t));
+                    ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // 4. 爱心绘制（高级渐变+哑光质感）
+        let mouseX = canvasWidth / 2;
+        let mouseY = canvasHeight / 2;
+        let heartScale = config.heart.baseScale;
+        let heartPulse = 0;
+        let lastFireworkTime = 0; // 限制烟花音效触发频率
+
+        window.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        function drawHeart() {
+            ctx.save();
+            // 灵动偏移+缓动跟随
+            const offsetX = Math.sin(Date.now() / 1500) * 8;
+            const offsetY = Math.cos(Date.now() / 1500) * 8;
+            const targetX = mouseX + offsetX;
+            const targetY = mouseY + offsetY;
+            // 心跳缩放（更自然的曲线）
+            heartPulse += config.heart.pulseSpeed;
+            heartScale = config.heart.baseScale + (config.heart.maxScale - config.heart.baseScale) * Math.pow(Math.sin(heartPulse), 2);
+
+            ctx.translate(targetX, targetY);
+            ctx.scale(heartScale, heartScale);
+
+            // 高级哑光渐变（低饱和+明暗过渡）
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 80);
+            gradient.addColorStop(0, config.colors.tertiary);
+            gradient.addColorStop(0.6, config.colors.primary);
+            gradient.addColorStop(1, config.colors.secondary);
+
+            // 绘制爱心（更饱满的形状）
+            ctx.beginPath();
+            for (let t = 0; t < Math.PI * 2; t += 0.01) {
+                const x = 16 * Math.pow(Math.sin(t), 3);
+                const y = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+                ctx.lineTo(x * 4, y * 4);
+            }
+            ctx.closePath();
+
+            // 哑光填充+细描边（高级质感）
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            ctx.restore();
+
+            // 心跳峰值触发烟花和爱心粒子（限制频率，避免音效刷屏）
+            const now = Date.now();
+            if (heartScale > config.heart.maxScale - 0.02 && now - lastFireworkTime > 800) {
+                lastFireworkTime = now;
+                // 生成爱心粒子（数量增加）
+                const hCount = Math.floor(Math.random() * 25 + 15); // 原15+8 → 25+15
+                for (let i = 0; i < hCount; i++) {
+                    heartParticles.push(new HeartParticle(targetX + (Math.random() - 0.5) * 120, targetY + (Math.random() - 0.5) * 120));
+                }
+                // 生成全屏烟花
+                createFirework(targetX, targetY);
+            }
+        }
+
+        // 5. 主动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 半透明叠加（拖影效果）
+            ctx.fillStyle = 'rgba(10, 10, 18, 0.15)';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            // 更新绘制星空粒子（打底）
+            starParticles.forEach(star => {
+                star.update();
+                star.draw();
+            });
+
+            // 更新绘制烟花粒子
+            fireworkParticles = fireworkParticles.filter(p => p.alpha > 0 && p.size > 0.1);
+            fireworkParticles.forEach(particle => {
+                particle.update();
+                particle.draw();
+            });
+
+            // 更新绘制爱心粒子
+            heartParticles = heartParticles.filter(p => p.alpha > 0);
+            heartParticles.forEach(particle => {
+                particle.update();
+                particle.draw();
+            });
+
+            // 绘制爱心
+            drawHeart();
+        }
+
+        // 启动动画
+        animate();
+    </script>
+</body>
+</html>
